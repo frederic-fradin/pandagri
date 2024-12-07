@@ -4,6 +4,11 @@ __pycache__/
 # Jupyter Notebook
 *.ipynb
 
+# Data files
+*.parquet
+*.txt
+*.zip
+
 # Environments
 .env
 .venv
