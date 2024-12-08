@@ -36,26 +36,25 @@ def load_com_disagg(year:int=current_year) -> None:
 
     print(f'CFTC {year} download with success!')
 
-def consolidate_com_disagg() -> None:
+def consolidate_com_disagg(year:int=current_year) -> None:
     # assign directory
-    directory = '../data/raw/'
-    init = pd.DataFrame()
+    directory = '../data/'
+    filename = f'raw/cftc_{year}.txt'
+    temp = pd.DataFrame()
 
-    # iterate over files in that directory
-    for filename in os.listdir(directory):
-        file = os.path.join(directory, filename)
-        split_tup = os.path.splitext(filename)
-        # checking if it is a file
-        if os.path.isfile(file) and split_tup[1] == '.txt':
-            raw = pd.read_table(file, delimiter=",", low_memory=False)
-            first_23_columns = raw.iloc[:, :23]
-            last_6_columns = raw.iloc[:, -6:]
-            select = pd.concat([first_23_columns, last_6_columns], axis=1)
-            init = pd.concat([init, select], axis=0)
-            init.replace('.', 0, inplace=True)
+    file = os.path.join(directory, filename)
+    split_tup = os.path.splitext(filename)
+    # checking if it is a file
+    if os.path.isfile(file) and split_tup[1] == '.txt':
+        raw = pd.read_table(file, delimiter=",", low_memory=False)
+        first_23_columns = raw.iloc[:, :23]
+        last_6_columns = raw.iloc[:, -6:]
+        select = pd.concat([first_23_columns, last_6_columns], axis=1)
+        temp = pd.concat([temp, select], axis=0)
+        temp.replace('.', 0, inplace=True)
     
-    print(f'Concatenate dataframe with success!', end='\n\n')
-    init.to_parquet('../data/processed/cftc.parquet', engine='fastparquet')
+    print(f'Concatenate dataframe with success!')
+    temp.to_parquet('../data/processed/cftc.parquet', engine='fastparquet')
 
     keep_columns = ['Market_and_Exchange_Names', 'As_of_Date_In_Form_YYMMDD',
        'Report_Date_as_YYYY-MM-DD', 'CFTC_Contract_Market_Code',
@@ -65,10 +64,11 @@ def consolidate_com_disagg() -> None:
        'CFTC_SubGroup_Code', 'FutOnly_or_Combined']
 
     # Melting the DataFrame to transform other columns into rows
-    df_melted = init.melt(id_vars=keep_columns, 
+    df_melted = temp.melt(id_vars=keep_columns, 
                         var_name='argument', 
                         value_name='value')
 
+    df_melted['Cftc_year'] = year
     df_melted['Market_and_Exchange_Names'] = df_melted['Market_and_Exchange_Names'].str.rstrip()
     df_melted['CFTC_Market_Code'] = df_melted['CFTC_Market_Code'].str.rstrip()
     df_melted['Market_and_Exchange_Names'] = df_melted.apply(lambda row: row['Market_and_Exchange_Names'].split(' - ')[0], axis=1)
@@ -82,10 +82,19 @@ def consolidate_com_disagg() -> None:
     df_melted['Value_signed'] = df_melted.apply(lambda row: row['value'] * -1 if row['Position_type'] == 'Short'
                                                     else row['value'], axis=1)
 
-    print(f'Melt dataframe with success!', end='\n\n')
-    df_melted.to_parquet('../data/cleaned/cftc.parquet', engine='fastparquet')
+    print(f'Melt dataframe with success! {df_melted.shape}')
 
+    # Consolidate existing file with new data
+    parq_file = os.path.join(directory, f'cleaned/cftc.parquet')
+    if os.path.isfile(parq_file):
+        df_final = pd.read_parquet(parq_file)
+        df_final = pd.concat([df_melted, df_final[df_final['Cftc_year'] != year]], axis=0)
+    else:
+        df_final = df_melted.copy()
+
+    df_final.to_parquet('../data/cleaned/cftc.parquet', engine='fastparquet')
+    print(f'Consolidate dataframe {year} with success! {df_final.shape}', end='\n\n')
 
 if __name__ == "__main__":
-    # load_com_disagg(current_year)
-    consolidate_com_disagg()
+    load_com_disagg(current_year)
+    consolidate_com_disagg(current_year)
