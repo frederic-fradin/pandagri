@@ -1,12 +1,15 @@
 import os
 import requests
 import pandas as pd
+import streamlit as st
 
 from zipfile import ZipFile
-from datetime import date
+from datetime import date, timedelta
 
 today = date.today()
 current_year = today.year
+directory = '../data'
+CURRENT_CWD = os.path.dirname(os.path.abspath(__file__))
 
 def load_com_disagg(year:int=current_year) -> None:
     #  Download the data behind the URL
@@ -14,32 +17,30 @@ def load_com_disagg(year:int=current_year) -> None:
     response = requests.get(url)
 
     #  Open the response generated into a new file in your local called image.jpg
-    open("../data/raw/cftc.zip", "wb").write(response.content)
+    open(f"{directory}/raw/cftc.zip", "wb").write(response.content)
 
     # loading the temp.zip and creating a zip object 
-    with ZipFile('../data/raw/cftc.zip', 'r') as zObject: 
-        zObject.extractall(path='../data/raw/')
-        zObject.extract("c_year.txt", path='../data/raw/') 
+    with ZipFile(f'{directory}/raw/cftc.zip', 'r') as zObject: 
+        zObject.extractall(path=f'{directory}//raw/')
+        zObject.extract("c_year.txt", path=f'{directory}/raw/') 
         zObject.close()
 
     # rename file with year to loop through a period
     try:
-        os.rename("../data/raw/c_year.txt", f"../data/raw/cftc_{year}.txt")
+        os.rename(f"{directory}/raw/c_year.txt", f"{directory}/raw/cftc_{year}.txt")
     except FileExistsError:
         print("File already Exists")
         print("Removing existing file")
         # skip the below code if you don't' want to forcefully rename
-        os.remove(f"../data/raw/cftc_{year}.txt")
+        os.remove(f"{directory}/raw/cftc_{year}.txt")
         # rename it
-        os.rename("../data/raw/c_year.txt", f"../data/raw/cftc_{year}.txt")
+        os.rename(f"{directory}/raw/c_year.txt", f"{directory}/raw/cftc_{year}.txt")
         print('Done renaming a file')
 
     print(f'CFTC {year} download with success!')
 
-def consolidate_com_disagg(year:int=current_year) -> None:
-    # assign directory
-    directory = '../data/'
-    filename = f'raw/cftc_{year}.txt'
+def consolidate_com_disagg(year:int=current_year) -> None:    
+    filename = f'/raw/cftc_{year}.txt'
     temp = pd.DataFrame()
 
     file = os.path.join(directory, filename)
@@ -54,7 +55,7 @@ def consolidate_com_disagg(year:int=current_year) -> None:
         temp.replace('.', 0, inplace=True)
     
     print(f'Concatenate dataframe with success!')
-    temp.to_parquet('../data/processed/cftc.parquet', engine='fastparquet')
+    temp.to_parquet(f'{directory}/processed/cftc.parquet', engine='fastparquet')
 
     keep_columns = ['Market_and_Exchange_Names', 'As_of_Date_In_Form_YYMMDD',
        'Report_Date_as_YYYY-MM-DD', 'CFTC_Contract_Market_Code',
@@ -92,8 +93,27 @@ def consolidate_com_disagg(year:int=current_year) -> None:
     else:
         df_final = df_melted.copy()
 
-    df_final.to_parquet('../data/cleaned/cftc.parquet', engine='fastparquet')
+    df_final.to_parquet(f'{directory}/cleaned/cftc.parquet', engine='fastparquet')
     print(f'Consolidate dataframe {year} with success! {df_final.shape}', end='\n\n')
+
+@st.cache_data(ttl=timedelta(hours=1))
+def variable_com_disagg() -> dict:
+    parq_file = os.path.join(CURRENT_CWD, '../data/cleaned/cftc.parquet')
+    df = pd.read_parquet(parq_file)
+
+    dict_com_disagg = {
+                        'Cftc_year':df['Cftc_year'].unique(),
+                        'Classifications':df['Classifications'].unique(),
+                        'Position_type':df['Position_type'].unique(),
+                        'Argument':df['argument'].unique(),
+                        'CFTC_Market_Code':df['CFTC_Market_Code'].unique(),
+                        'Market_and_Exchange_Names':df['Market_and_Exchange_Names'].unique(),
+                        'CFTC_SubGroup_Code':df['CFTC_SubGroup_Code'].unique(),
+                        'Report_Date':df['Report_Date_as_YYYY-MM-DD'].unique(),
+                       }
+    
+    return dict_com_disagg
+
 
 if __name__ == "__main__":
     load_com_disagg(current_year)
