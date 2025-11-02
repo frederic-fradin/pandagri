@@ -8,21 +8,22 @@ from datetime import date, timedelta
 
 today = date.today()
 current_year = today.year
-directory = '../data'
+directory = "../data"
 CURRENT_CWD = os.path.dirname(os.path.abspath(__file__))
 
-def load_com_disagg(year:int=current_year) -> None:
+
+def load_com_disagg(year: int = current_year) -> None:
     #  Download the data behind the URL
-    url = f'https://www.cftc.gov/files/dea/history/com_disagg_txt_{year}.zip'
+    url = f"https://www.cftc.gov/files/dea/history/com_disagg_txt_{year}.zip"
     response = requests.get(url)
 
     #  Open the response generated into a new file in your local called image.jpg
     open(f"{directory}/raw/cftc.zip", "wb").write(response.content)
 
-    # loading the temp.zip and creating a zip object 
-    with ZipFile(f'{directory}/raw/cftc.zip', 'r') as zObject: 
-        zObject.extractall(path=f'{directory}//raw/')
-        zObject.extract("c_year.txt", path=f'{directory}/raw/') 
+    # loading the temp.zip and creating a zip object
+    with ZipFile(f"{directory}/raw/cftc.zip", "r") as zObject:
+        zObject.extractall(path=f"{directory}//raw/")
+        zObject.extract("c_year.txt", path=f"{directory}/raw/")
         zObject.close()
 
     # rename file with year to loop through a period
@@ -35,83 +36,107 @@ def load_com_disagg(year:int=current_year) -> None:
         os.remove(f"{directory}/raw/cftc_{year}.txt")
         # rename it
         os.rename(f"{directory}/raw/c_year.txt", f"{directory}/raw/cftc_{year}.txt")
-        print('Done renaming a file')
+        print("Done renaming a file")
 
-    print(f'CFTC {year} download with success!')
+    print(f"CFTC {year} download with success!")
 
-def consolidate_com_disagg(year:int=current_year) -> None:    
-    filename = f'/raw/cftc_{year}.txt'
+
+def consolidate_com_disagg(year: int = current_year) -> None:
+    filename = f"/raw/cftc_{year}.txt"
     temp = pd.DataFrame()
 
     file = os.path.join(directory, filename)
     split_tup = os.path.splitext(filename)
     # checking if it is a file
-    if os.path.isfile(file) and split_tup[1] == '.txt':
+    if os.path.isfile(file) and split_tup[1] == ".txt":
         raw = pd.read_table(file, delimiter=",", low_memory=False)
         first_23_columns = raw.iloc[:, :23]
         last_6_columns = raw.iloc[:, -6:]
         select = pd.concat([first_23_columns, last_6_columns], axis=1)
         temp = pd.concat([temp, select], axis=0)
-        temp.replace('.', 0, inplace=True)
-    
-    print(f'Concatenate dataframe with success!')
-    temp.to_parquet(f'{directory}/processed/cftc.parquet', engine='fastparquet')
+        temp.replace(".", 0, inplace=True)
 
-    keep_columns = ['Market_and_Exchange_Names', 'As_of_Date_In_Form_YYMMDD',
-       'Report_Date_as_YYYY-MM-DD', 'CFTC_Contract_Market_Code',
-       'CFTC_Market_Code', 'CFTC_Region_Code', 'CFTC_Commodity_Code',
-       'Contract_Units', 'CFTC_Contract_Market_Code_Quotes',
-       'CFTC_Market_Code_Quotes', 'CFTC_Commodity_Code_Quotes',
-       'CFTC_SubGroup_Code', 'FutOnly_or_Combined']
+    print("Concatenate dataframe with success!")
+    temp.to_parquet(f"{directory}/processed/cftc.parquet", engine="fastparquet")
+
+    keep_columns = [
+        "Market_and_Exchange_Names",
+        "As_of_Date_In_Form_YYMMDD",
+        "Report_Date_as_YYYY-MM-DD",
+        "CFTC_Contract_Market_Code",
+        "CFTC_Market_Code",
+        "CFTC_Region_Code",
+        "CFTC_Commodity_Code",
+        "Contract_Units",
+        "CFTC_Contract_Market_Code_Quotes",
+        "CFTC_Market_Code_Quotes",
+        "CFTC_Commodity_Code_Quotes",
+        "CFTC_SubGroup_Code",
+        "FutOnly_or_Combined",
+    ]
 
     # Melting the DataFrame to transform other columns into rows
-    df_melted = temp.melt(id_vars=keep_columns, 
-                        var_name='argument', 
-                        value_name='value')
+    df_melted = temp.melt(id_vars=keep_columns, var_name="argument", value_name="value")
 
-    df_melted['Cftc_year'] = year
-    df_melted['Market_and_Exchange_Names'] = df_melted['Market_and_Exchange_Names'].str.rstrip()
-    df_melted['CFTC_Market_Code'] = df_melted['CFTC_Market_Code'].str.rstrip()
-    df_melted['Market_and_Exchange_Names'] = df_melted.apply(lambda row: row['Market_and_Exchange_Names'].split(' - ')[0], axis=1)
-                                                   
-    df_melted['Classifications'] = df_melted.apply(lambda row: row['argument'].split('_')[0] 
-                                                    if row['argument'].split('_')[0] in ['Swap', 'NonRept'] else
-                                                    row['argument'].split('_')[0] + row['argument'].split('_')[1], axis=1)
-    
-    df_melted['Position_type'] = df_melted.apply(lambda row: row['argument'].split('_')[-2], axis=1)
-    
-    df_melted['Value_signed'] = df_melted.apply(lambda row: row['value'] * -1 if row['Position_type'] == 'Short'
-                                                    else row['value'], axis=1)
+    df_melted["Cftc_year"] = year
+    df_melted["Market_and_Exchange_Names"] = df_melted[
+        "Market_and_Exchange_Names"
+    ].str.rstrip()
+    df_melted["CFTC_Market_Code"] = df_melted["CFTC_Market_Code"].str.rstrip()
+    df_melted["Market_and_Exchange_Names"] = df_melted.apply(
+        lambda row: row["Market_and_Exchange_Names"].split(" - ")[0], axis=1
+    )
 
-    print(f'Melt dataframe with success! {df_melted.shape}')
+    df_melted["Classifications"] = df_melted.apply(
+        lambda row: row["argument"].split("_")[0]
+        if row["argument"].split("_")[0] in ["Swap", "NonRept"]
+        else row["argument"].split("_")[0] + row["argument"].split("_")[1],
+        axis=1,
+    )
+
+    df_melted["Position_type"] = df_melted.apply(
+        lambda row: row["argument"].split("_")[-2], axis=1
+    )
+
+    df_melted["Value_signed"] = df_melted.apply(
+        lambda row: row["value"] * -1
+        if row["Position_type"] == "Short"
+        else row["value"],
+        axis=1,
+    )
+
+    print(f"Melt dataframe with success! {df_melted.shape}")
 
     # Consolidate existing file with new data
-    parq_file = os.path.join(directory, f'cleaned/cftc.parquet')
+    parq_file = os.path.join(directory, "cleaned/cftc.parquet")
     if os.path.isfile(parq_file):
         df_final = pd.read_parquet(parq_file)
-        df_final = pd.concat([df_melted, df_final[df_final['Cftc_year'] != year]], axis=0)
+        df_final = pd.concat(
+            [df_melted, df_final[df_final["Cftc_year"] != year]], axis=0
+        )
     else:
         df_final = df_melted.copy()
 
-    df_final.to_parquet(f'{directory}/cleaned/cftc.parquet', engine='fastparquet')
-    print(f'Consolidate dataframe {year} with success! {df_final.shape}', end='\n\n')
+    df_final.to_parquet(f"{directory}/cleaned/cftc.parquet", engine="fastparquet")
+    print(f"Consolidate dataframe {year} with success! {df_final.shape}", end="\n\n")
+
 
 @st.cache_data(ttl=timedelta(hours=1))
 def variable_com_disagg() -> dict:
-    parq_file = os.path.join(CURRENT_CWD, '../data/cleaned/cftc.parquet')
+    parq_file = os.path.join(CURRENT_CWD, "../data/cleaned/cftc.parquet")
     df = pd.read_parquet(parq_file)
 
     dict_com_disagg = {
-                        'Cftc_year':df['Cftc_year'].unique(),
-                        'Classifications':df['Classifications'].unique(),
-                        'Position_type':df['Position_type'].unique(),
-                        'Argument':df['argument'].unique(),
-                        'CFTC_Market_Code':df['CFTC_Market_Code'].unique(),
-                        'Market_and_Exchange_Names':df['Market_and_Exchange_Names'].unique(),
-                        'CFTC_SubGroup_Code':df['CFTC_SubGroup_Code'].unique(),
-                        'Report_Date':df['Report_Date_as_YYYY-MM-DD'].unique(),
-                       }
-    
+        "Cftc_year": df["Cftc_year"].unique(),
+        "Classifications": df["Classifications"].unique(),
+        "Position_type": df["Position_type"].unique(),
+        "Argument": df["argument"].unique(),
+        "CFTC_Market_Code": df["CFTC_Market_Code"].unique(),
+        "Market_and_Exchange_Names": df["Market_and_Exchange_Names"].unique(),
+        "CFTC_SubGroup_Code": df["CFTC_SubGroup_Code"].unique(),
+        "Report_Date": df["Report_Date_as_YYYY-MM-DD"].unique(),
+    }
+
     return dict_com_disagg
 
 
